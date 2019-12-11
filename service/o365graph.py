@@ -30,13 +30,23 @@ def get(path):
 
     if request.method == "GET":
         path = path
+        logger.info(f"testing {path}")
 
     entities = data_access_layer.get_paged_entities(path, args=request.args)
 
+    logger.info(entities)
     return Response(
         stream_json(entities),
         mimetype='application/json'
     )
+
+@app.route("/update_metadata_all_documents/<path:site>", methods=["GET", "PATCH"])
+def update_metadata(site):
+    update_all_documents = data_access_layer.insert_metadata_on_all_documents(site)
+
+    logger.info(update_all_documents)
+
+    return Response(stream_json(update_all_documents), mimetype='application/json')
 
 
 @app.route("/siteurl", methods=["POST"])

@@ -1,4 +1,4 @@
-
+import json
 import logging
 import requests
 from time import sleep
@@ -38,6 +38,7 @@ class Graph:
         access_token = resp.json().get("access_token")
         self.auth_header = {"Authorization": "Bearer " + access_token}
 
+
     def request(self, method, url, **kwargs):
         if not self.session:
             self.session = requests.Session()
@@ -53,6 +54,7 @@ class Graph:
             headers = {**headers, "Content-Type": "application/json"}
 
         req = requests.Request(method, url, headers=headers, **kwargs)
+
 
         resp = self.session.send(req.prepare())
         if resp.status_code == 401:
@@ -83,6 +85,7 @@ class Graph:
                 logger.error(error_text)
                 raise AssertionError(error_text)
             res = Dotdictify(req.json())
+            logger.info(res)
             for entity in res.get(self.config.entities_path):
 
                 yield(entity)
@@ -93,6 +96,80 @@ class Graph:
             else:
                 next_page = None
         logger.info(f"Returning entities from {page_counter} pages")
+
+    #todo: list document libraries
+    def __list_document_libraries(self, site):
+        url = self.graph_url + site + "/lists"
+        logger.info(f"REST url: {url}")
+        req = self.request("GET", url)
+        doc_libs = []
+
+        if req.ok:
+            libraries = req.json()
+            doc_libs = libraries['value']
+
+        return doc_libs
+
+    def __get_all_documents(self, site, doclib):
+        url = self.graph_url + site + "/lists/" + doclib + "/items"
+        logger.info(f"Fetching documents from REST URL: {url}")
+        req = self.request("GET",url)
+        docs = ""
+        if req.ok:
+            data = req.json()
+            docs = data['value']
+
+        return docs
+
+    def __get_document_metadata(self, site, doclib, doc_id):
+        url = self.graph_url + site + "/lists/" + doclib + "/items/" + doc_id
+        req = self.request("GET", url)
+        doc_metadata = {}
+
+        if req.ok:
+            data = req.json()
+            doc_metadata = data['fields']
+        else:
+            logger.error(f"Issue while fetching document metadata: {req}")
+
+        return doc_metadata
+
+
+
+    def __patch_metadata(self, site, doclib, doc_id):
+        url = self.graph_url + site + "/lists/" + doclib + "/items/" + doc_id + "/fields"
+        doc_metadata = {}
+        data = {}
+        with open('tmp_metadata.json') as f:
+            data = json.load(f)
+            logger.info(data)
+        req = self.request("PATCH", url, json=data)
+
+        if req.ok:
+            doc_metadata = req.json()
+            logger.info(f"update success: {doc_metadata}")
+        else:
+            logger.error(f"PATCH failed: {req.status_code}")
+
+        return doc_metadata
+
+
+    def insert_metadata_on_all_documents(self, site):
+        logger.info(site)
+        libraries = self.__list_document_libraries(site)
+
+        if libraries:
+            for lib in libraries:
+                doclib_id = lib['id']
+
+                docs = self.__get_all_documents(site, doclib_id)
+                if docs:
+                    for doc in docs:
+                        doc_id = doc['id']
+                        doc_metadata = self.__get_document_metadata(site, doclib_id, doc_id)
+                        if doc_metadata:
+                            self.__patch_metadata(site, doclib_id, doc_id)
+
 
     def __get_all_siteurls(self, posted_entities):
         logger.info('fetching site urls')
